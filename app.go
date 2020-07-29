@@ -41,22 +41,21 @@ func (a *App) Run(addr string) {
 }
 
 func (a *App) getAll(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("getAll(): Get all customers")
 	customers := getCustomers(a.Session)
-	json.NewEncoder(w).Encode(customers)
+	respondWithJSON(w, http.StatusOK, customers)
 }
 
 // GetOne ...Get customer by id
 func (a *App) getOne(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.FormValue("id"))
-	fmt.Println("getOne(): Get customer", id)
-	c := Customer{ID: id}
-	c.getCustomer(a.Session)
-	if c != (Customer{}) {
-		json.NewEncoder(w).Encode(c)
+	vars := mux.Vars(r)
+	id, _ := strconv.Atoi(vars["id"])
+	cust := Customer{ID: id}
+	cust.getCustomer(a.Session)
+
+	if len(cust.Address) > 0 {
+		respondWithJSON(w, http.StatusOK, cust)
 	} else {
-		http.Error(w, "Customer not found",
-			http.StatusNotFound)
+		respondWithError(w, http.StatusNotFound, "Customer not found")
 	}
 }
 
@@ -65,15 +64,23 @@ func (a *App) insert(w http.ResponseWriter, r *http.Request) {
 	var cust Customer
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Error reading request body",
-			http.StatusInternalServerError)
+		respondWithError(w, http.StatusInternalServerError, "Error reading request body")
 	}
 	err = json.Unmarshal(body, &cust)
 	if err != nil {
-		http.Error(w, "Error reading request body",
-			http.StatusInternalServerError)
+		respondWithError(w, http.StatusInternalServerError, "Error reading request body")
 	}
 	cust.createCustomer(a.Session)
-	fmt.Println("insert(): Inserting new customer", cust)
-	json.NewEncoder(w).Encode(cust)
+	respondWithJSON(w, http.StatusOK, cust)
+}
+
+func respondWithError(w http.ResponseWriter, code int, message string) {
+	respondWithJSON(w, code, map[string]string{"error": message})
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	response, _ := json.Marshal(payload)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(response)
 }

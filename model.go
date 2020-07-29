@@ -16,7 +16,6 @@ type Customer struct {
 
 func (cust *Customer) getCustomer(session *gocql.Session) {
 	m := map[string]interface{}{}
-
 	iter := session.Query("SELECT * FROM customers where id=?", cust.ID).Iter()
 	for iter.MapScan(m) {
 		cust.ID = m["id"].(int)
@@ -35,7 +34,6 @@ func (cust *Customer) createCustomer(session *gocql.Session) {
 }
 
 func getCustomers(session *gocql.Session) []Customer {
-	fmt.Println("Getting all customers")
 	var customers []Customer
 	m := map[string]interface{}{}
 	iter := session.Query("SELECT * FROM customers").Iter()
