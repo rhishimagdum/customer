@@ -15,7 +15,7 @@ import (
 var a App
 
 func TestMain(m *testing.M) {
-	a.Initialize("test_customer")
+	a.Initialize(CustomerImplCassandra{}, KafkaMessanger{})
 	ensureTableExists()
 	code := m.Run()
 	clearTable()
@@ -23,13 +23,13 @@ func TestMain(m *testing.M) {
 }
 
 func ensureTableExists() {
-	if err := a.Session.Query(tableCreationQuery).Exec(); err != nil {
+	if err := Session.Query(tableCreationQuery).Exec(); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func clearTable() {
-	a.Session.Query("TRUNCATE TABLE customers").Exec()
+	Session.Query("TRUNCATE TABLE customers").Exec()
 }
 
 func addTestCustomers(count int) {
@@ -39,7 +39,7 @@ func addTestCustomers(count int) {
 
 	for i := 0; i < count; i++ {
 		suffix := count + i
-		if err := a.Session.Query("INSERT INTO test_customer.customers(id, first_name, last_name, address) VALUES(?, ?, ?, ?)", suffix, "First-"+strconv.Itoa(suffix), "Last-"+strconv.Itoa(suffix), "Address-"+strconv.Itoa(suffix)).Exec(); err != nil {
+		if err := Session.Query("INSERT INTO customer.customers(id, first_name, last_name, address) VALUES(?, ?, ?, ?)", suffix, "First-"+strconv.Itoa(suffix), "Last-"+strconv.Itoa(suffix), "Address-"+strconv.Itoa(suffix)).Exec(); err != nil {
 			fmt.Println("Not inserted")
 		}
 	}
@@ -94,7 +94,7 @@ func TestCreateProduct(t *testing.T) {
 		t.Errorf("Expected product price to be 'snow'. Got '%v'", m["lastName"])
 	}
 
-	// the id is compared to 1.0 because JSON unmarshaling converts numbers to
+	// the id is compared to 2.0 because JSON unmarshaling converts numbers to
 	// floats, when the target is a map[string]interface{}
 	if m["id"] != 2.0 {
 		t.Errorf("Expected product ID to be '2'. Got '%v'", m["id"])

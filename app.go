@@ -2,42 +2,25 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 
-	"github.com/Shopify/sarama"
-	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 )
 
-const (
-	kafkaConn        = "localhost:9092"
-	topic            = "cust"
-	cassandraCluster = "127.0.0.1"
-)
-
 type App struct {
-	Router   *mux.Router
-	Session  *gocql.Session
-	Producer sarama.AsyncProducer
-	Consuner sarama.Consumer
+	Router       *mux.Router
+	messanger    Messanger
+	CustomerRepo CustomerDao
 }
 
 //Initialize ...initializes connectipn and mux
-func (a *App) Initialize(keyspace string) {
-	var err error
-	cluster := gocql.NewCluster(cassandraCluster)
-	cluster.Keyspace = keyspace
-	a.Session, err = cluster.CreateSession()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Cassandra connection done")
+func (a *App) Initialize(repo CustomerDao, m Messanger) {
+	a.CustomerRepo = repo
 	a.Router = mux.NewRouter()
 	a.initializeRoutes()
-	a.initializeProducer()
+	a.messanger = m
 }
 
 func (a *App) initializeRoutes() {
@@ -46,21 +29,12 @@ func (a *App) initializeRoutes() {
 	a.Router.HandleFunc("/customers/{id}", a.getOne).Methods("GET")
 }
 
-func (a *App) initializeProducer() {
-	config := sarama.NewConfig()
-	config.Producer.Retry.Max = 5
-	config.Producer.RequiredAcks = sarama.WaitForAll
-	config.Producer.Return.Successes = true
-	a.Producer, _ = sarama.NewAsyncProducer([]string{kafkaConn}, config)
-	fmt.Println("KAFKA connection done")
-}
-
 func (a *App) Run(addr string) {
 	http.ListenAndServe(":80", a.Router)
 }
 
 func (a *App) getAll(w http.ResponseWriter, r *http.Request) {
-	customers := getCustomers(a.Session)
+	customers := a.CustomerRepo.GetAll()
 	respondWithJSON(w, http.StatusOK, customers)
 }
 
@@ -68,9 +42,7 @@ func (a *App) getAll(w http.ResponseWriter, r *http.Request) {
 func (a *App) getOne(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, _ := strconv.Atoi(vars["id"])
-	cust := Customer{ID: id}
-	cust.getCustomer(a.Session)
-
+	cust := a.CustomerRepo.GetById(id)
 	if len(cust.Address) > 0 {
 		respondWithJSON(w, http.StatusOK, cust)
 	} else {
@@ -89,13 +61,10 @@ func (a *App) insert(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error reading request body")
 	}
-	cust.createCustomer(a.Session)
+	a.CustomerRepo.Create(cust)
 
-	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Value: sarama.ByteEncoder(body),
-	}
-	a.Producer.Input() <- msg
+	message, _ := json.Marshal(cust)
+	a.messanger.PublishMessage(string(message))
 	respondWithJSON(w, http.StatusOK, cust)
 }
 
