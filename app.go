@@ -7,19 +7,28 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Shopify/sarama"
 	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 )
 
+const (
+	kafkaConn        = "localhost:9092"
+	topic            = "cust"
+	cassandraCluster = "127.0.0.1"
+)
+
 type App struct {
-	Router  *mux.Router
-	Session *gocql.Session
+	Router   *mux.Router
+	Session  *gocql.Session
+	Producer sarama.AsyncProducer
+	Consuner sarama.Consumer
 }
 
 //Initialize ...initializes connectipn and mux
 func (a *App) Initialize(keyspace string) {
 	var err error
-	cluster := gocql.NewCluster("127.0.0.1")
+	cluster := gocql.NewCluster(cassandraCluster)
 	cluster.Keyspace = keyspace
 	a.Session, err = cluster.CreateSession()
 	if err != nil {
@@ -28,12 +37,22 @@ func (a *App) Initialize(keyspace string) {
 	fmt.Println("Cassandra connection done")
 	a.Router = mux.NewRouter()
 	a.initializeRoutes()
+	a.initializeProducer()
 }
 
 func (a *App) initializeRoutes() {
 	a.Router.HandleFunc("/customers", a.getAll).Methods("GET")
 	a.Router.HandleFunc("/customers", a.insert).Methods("Post")
 	a.Router.HandleFunc("/customers/{id}", a.getOne).Methods("GET")
+}
+
+func (a *App) initializeProducer() {
+	config := sarama.NewConfig()
+	config.Producer.Retry.Max = 5
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Return.Successes = true
+	a.Producer, _ = sarama.NewAsyncProducer([]string{kafkaConn}, config)
+	fmt.Println("KAFKA connection done")
 }
 
 func (a *App) Run(addr string) {
@@ -71,6 +90,12 @@ func (a *App) insert(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error reading request body")
 	}
 	cust.createCustomer(a.Session)
+
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Value: sarama.ByteEncoder(body),
+	}
+	a.Producer.Input() <- msg
 	respondWithJSON(w, http.StatusOK, cust)
 }
 
